@@ -47,16 +47,21 @@ num_generations = 20
 mutation_rate = 0.2
 crossover_rate = 0.85
 
+models_trained = 0
+
 
 # Define fitness function
 def fitness(model):
+    global models_trained
+    models_trained += 1
+
     model.train(x=train_h2o_train.names[:-1], y="label", training_frame=train_h2o_train)
     predictions = model.predict(train_h2o_test).as_data_frame()['predict'].tolist()
     label_guess = pd.Series(train_data_train['label']).mode()[0]
     predictions = [label_guess if np.isnan(x) else x for x in predictions]
     correct_predictions = sum(predictions == train_data_test['label'])
     accuracy = correct_predictions / len(train_data_test)
-    print("Model Accuracy: " + str(accuracy))
+    print("Model Accuracy: {:.2f}%".format(accuracy * 100), " , Models Trained: ", models_trained, "/200")
     return accuracy, correct_predictions, predictions
 
 
