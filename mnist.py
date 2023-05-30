@@ -178,7 +178,7 @@ best_model_predictions = best_model.predict(test_h2o).as_data_frame()['predict']
 
 # Save the best model
 logging.info("Saving the best model for future training...")
-h2o.save_model(best_model, path=os.path.join(resources_dir, 'best_model'), force=True)
+h2o.save_model(best_model, path=resources_dir, filename='best_model', force=True)
 
 # Create result.csv containing the ID of the test.csv line and the predicted number ("label")
 result_df = pd.DataFrame({'ID': test_data['Id'], 'label': best_model_predictions})
