@@ -19,6 +19,11 @@ resources_dir = os.path.join(current_dir, 'resources')
 results_dir = os.path.join(current_dir, 'results')
 logs_dir = os.path.join(current_dir, 'logs')
 
+# Create directories if they do not exist
+for dir in [resources_dir, results_dir, logs_dir]:
+    if not os.path.exists(dir):
+        os.makedirs(dir)
+
 # Logger config
 current_time_millis = int(round(time.time() * 1000))
 log_file = os.path.join(logs_dir, 'log_' + str(current_time_millis) + ".log")
