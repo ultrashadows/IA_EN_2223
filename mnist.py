@@ -77,9 +77,10 @@ def fitness(model):
     predictions = [label_guess if np.isnan(x) else x for x in predictions]
     correct_predictions = sum([pred == label for pred, label in zip(predictions, train_data_test['label'])])
     accuracy = correct_predictions / len(train_data_test)
-    print("Model Accuracy: {:.2f}%".format(accuracy * 100), " , Models Trained: ", models_trained, "/200")
+    print("Model Accuracy: {:.2f}%".format(accuracy * 100), " , Models Trained: ", models_trained, "/",
+          str(pop_size * num_generations))
     logging.info("Model Accuracy: {:.2f}%".format(accuracy * 100) + " , Models Trained: "
-                 + str(models_trained) + "/200")
+                 + str(models_trained) + "/" + str(pop_size * num_generations))
     return accuracy, correct_predictions, predictions
 
 
@@ -172,7 +173,7 @@ best_model_predictions = best_model.predict(test_h2o).as_data_frame()['predict']
 
 # Save the best model
 logging.info("Saving the best model for future training...")
-best_model.save_model(os.path.join(resources_dir, 'best_model'))
+h2o.save_model(best_model, path=os.path.join(resources_dir, 'best_model'), force=True)
 
 # Create result.csv containing the ID of the test.csv line and the predicted number ("label")
 result_df = pd.DataFrame({'ID': test_data['Id'], 'label': best_model_predictions})
