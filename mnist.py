@@ -1,4 +1,5 @@
 # Import necessary libraries
+import random
 import h2o
 from h2o.estimators import H2ORandomForestEstimator, H2OGradientBoostingEstimator, H2ODeepLearningEstimator
 import pandas as pd
@@ -53,10 +54,13 @@ test_h2o = h2o.H2OFrame(test_data)
 # Set the response column for training purposes
 train_h2o_train["label"] = train_h2o_train["label"].asfactor()
 
+# Define a random seed
+random_seed = random.randint(0,100000)
+
 # Define three base models
-rf_base = H2ORandomForestEstimator(ntrees=20, max_depth=10, nfolds=5, seed=123, max_runtime_secs=300)
-gbm_base = H2OGradientBoostingEstimator(ntrees=20, max_depth=10, nfolds=5, seed=123, max_runtime_secs=300)
-dl_base = H2ODeepLearningEstimator(hidden=[50, 50], epochs=10, nfolds=5, seed=123, max_runtime_secs=300)
+rf_base = H2ORandomForestEstimator(ntrees=20, max_depth=10, nfolds=5, seed=random_seed, max_runtime_secs=300)
+gbm_base = H2OGradientBoostingEstimator(ntrees=20, max_depth=10, nfolds=5, seed=random_seed, max_runtime_secs=300)
+dl_base = H2ODeepLearningEstimator(hidden=[50, 50, 50], epochs=10, nfolds=5, seed=random_seed, max_runtime_secs=300)
 
 # Add base models to a list
 base_models = [rf_base, gbm_base, dl_base]
@@ -64,7 +68,7 @@ base_models = [rf_base, gbm_base, dl_base]
 # Define genetic algorithm parameters
 # Currently using default values recommended by past studies
 pop_size = 10
-num_generations = 1
+num_generations = 20
 mutation_rate = 0.2
 crossover_rate = 0.85
 
@@ -149,11 +153,11 @@ for generation in range(num_generations):
     child1 = crossover(parent1, parent2)
     child2 = mutation(child1)
 
-    # Replace least fit model in population with new child
+    # Replace the least fit model in population with new child
     least_fit = np.argmin([score[0] for score in fitness_scores])
     population[least_fit] = child2
 
-    # Evaluate best fitness and model
+    # Evaluate the best fitness and model
     current_accuracy = max([score[0] for score in fitness_scores])
     current_model = population[np.argmax([score[0] for score in fitness_scores])]
 
