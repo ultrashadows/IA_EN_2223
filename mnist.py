@@ -55,12 +55,12 @@ test_h2o = h2o.H2OFrame(test_data)
 train_h2o_train["label"] = train_h2o_train["label"].asfactor()
 
 # Define a random seed
-random_seed = random.randint(0,100000)
+random_seed = random.randint(0, 100000)
 
 # Define three base models
-rf_base = H2ORandomForestEstimator(ntrees=20, max_depth=10, nfolds=5, seed=random_seed, max_runtime_secs=300)
-gbm_base = H2OGradientBoostingEstimator(ntrees=20, max_depth=10, nfolds=5, seed=random_seed, max_runtime_secs=300)
-dl_base = H2ODeepLearningEstimator(hidden=[50, 50, 50], epochs=10, nfolds=5, seed=random_seed, max_runtime_secs=300)
+rf_base = H2ORandomForestEstimator(ntrees=20, mtries=28, max_depth=10, nfolds=5, seed=random_seed)
+gbm_base = H2OGradientBoostingEstimator(ntrees=20, max_depth=10, nfolds=5, seed=random_seed)
+dl_base = H2ODeepLearningEstimator(hidden=[50, 50, 50], epochs=15, nfolds=5, seed=random_seed)
 
 # Add base models to a list
 base_models = [rf_base, gbm_base, dl_base]
@@ -69,9 +69,6 @@ base_models = [rf_base, gbm_base, dl_base]
 # Currently using default values recommended by past studies
 pop_size = 10
 num_generations = 20
-mutation_rate = 0.2
-crossover_rate = 0.85
-
 models_trained = 0
 
 
@@ -126,7 +123,13 @@ def mutation(model):
 population = [np.random.choice(base_models) for _ in range(pop_size)]
 
 # Initialize best accuracy
-best_accuracy = 0
+best_accuracy_file = os.path.join(resources_dir, 'best_accuracy.txt')
+if os.path.exists(best_accuracy_file):
+    # Load the saved accuracy
+    with open(best_accuracy_file, 'r') as file:
+        best_accuracy = float(file.readline().strip())
+else:
+    best_accuracy = 0
 
 # Initialize best model
 best_model_file = os.path.join(resources_dir, 'best_model')
@@ -171,6 +174,11 @@ for generation in range(num_generations):
     logging.info("Generation training complete!")
     logging.info("Generation: " + str(generation) + " Best accuracy: "
                  + str(max([score[0] for score in fitness_scores])))
+
+# Save best accuracy
+with open(best_accuracy_file, 'w') as file:
+    file.write(str(best_accuracy))
+
 
 # Train best model on full training data
 logging.info("Best model found, training best model...")
