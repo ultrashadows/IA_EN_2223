@@ -7,6 +7,7 @@ import numpy as np
 import os
 import time
 import logging
+import matplotlib.pyplot as plt
 
 # Start H2O
 h2o.init(ip="localhost", port=54321)
@@ -73,6 +74,7 @@ crossover_rate = 0.85
 mutation_rate = 0.2
 
 models_trained = 0
+fitness_scores_history = []
 
 
 # Define fitness function
@@ -167,6 +169,9 @@ for generation in range(num_generations):
     current_accuracy = max([score[0] for score in fitness_scores])
     current_model = population[np.argmax([score[0] for score in fitness_scores])]
 
+    # Save fitness scores for plotting
+    fitness_scores_history.append([score[0] for score in fitness_scores])
+
     # Check if current fitness is better than the best fitness so far
     if current_accuracy > best_accuracy:
         best_accuracy = current_accuracy
@@ -201,4 +206,18 @@ result_df = pd.DataFrame({'ID': test_data['Id'], 'label': best_model_predictions
 # Save result to results folder
 logging.info("Saving results...")
 result_df.to_csv(os.path.join(results_dir, 'predictions_' + str(current_time_millis) + ".csv"), index=False)
+
+# Create x-axis values for generations
+generations = range(num_generations)
+
+# Plot the fitness scores
+plt.plot(generations, fitness_scores_history)
+plt.xlabel('Generation')
+plt.ylabel('Fitness Score')
+plt.title('Fitness Score Evolution')
+
+# Save the graph as an image
+graph_file = os.path.join(results_dir, 'fitness_graph_' + str(current_time_millis) + '.png')
+plt.savefig(graph_file)
+
 logging.info("Run done!")
