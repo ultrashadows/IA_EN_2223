@@ -69,6 +69,9 @@ base_models = [rf_base, gbm_base, dl_base]
 # Currently using default values recommended by past studies
 pop_size = 10
 num_generations = 20
+crossover_rate = 0.85
+mutation_rate = 0.2
+
 models_trained = 0
 
 
@@ -97,7 +100,7 @@ def crossover(model1, model2):
 
     for key in model1_params:
         if isinstance(model1_params[key], list):
-            if np.random.rand() > 0.5:
+            if np.random.rand() <= crossover_rate:
                 model1_params[key], model2_params[key] = model2_params[key], model1_params[key]
 
     new_model = model1.__class__()
@@ -110,7 +113,7 @@ def mutation(model):
 
     for key in model_params:
         if isinstance(model_params[key], list):
-            if np.random.rand() > 0.5:
+            if np.random.rand() <= mutation_rate:
                 new_val = np.random.choice(model_params[key])
                 model_params[key] = new_val
 
