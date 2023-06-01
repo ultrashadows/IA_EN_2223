@@ -10,7 +10,7 @@ import logging
 import matplotlib.pyplot as plt
 
 # Start H2O
-h2o.init(ip="localhost", port=54321)
+h2o.init(ip="localhost", port=54321, max_mem_size_GB=12)
 
 # Change default H2O settings for performance
 h2o.no_progress()
