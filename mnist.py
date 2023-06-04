@@ -61,7 +61,7 @@ random_seed = random.randint(0, 100000)
 # Define three base models
 rf_base = H2ORandomForestEstimator(ntrees=20, mtries=28, max_depth=10, nfolds=5, seed=random_seed)
 gbm_base = H2OGradientBoostingEstimator(ntrees=20, max_depth=10, nfolds=5, seed=random_seed)
-dl_base = H2ODeepLearningEstimator(hidden=[50, 50, 50], epochs=15, nfolds=5, seed=random_seed)
+dl_base = H2ODeepLearningEstimator(hidden=[75, 75, 75], epochs=20, nfolds=5, seed=random_seed)
 
 # Add base models to a list
 base_models = [rf_base, gbm_base, dl_base]
