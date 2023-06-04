@@ -69,7 +69,7 @@ base_models = [rf_base, gbm_base, dl_base]
 # Define genetic algorithm parameters
 # Currently using default values recommended by past studies
 pop_size = 10
-num_generations = 10
+num_generations = 20
 crossover_rate = 0.85
 mutation_rate = 0.2
 
