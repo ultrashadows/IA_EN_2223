@@ -59,8 +59,8 @@ train_h2o_train["label"] = train_h2o_train["label"].asfactor()
 random_seed = random.randint(0, 100000)
 
 # Define three base models
-rf_base = H2ORandomForestEstimator(ntrees=20, mtries=28, max_depth=10, nfolds=5, seed=random_seed)
-gbm_base = H2OGradientBoostingEstimator(ntrees=20, max_depth=10, nfolds=5, seed=random_seed)
+rf_base = H2ORandomForestEstimator(ntrees=30, mtries=28, max_depth=10, nfolds=5, seed=random_seed)
+gbm_base = H2OGradientBoostingEstimator(ntrees=30, max_depth=10, nfolds=5, seed=random_seed)
 dl_base = H2ODeepLearningEstimator(hidden=[75, 75, 75], epochs=20, nfolds=5, seed=random_seed)
 
 # Add base models to a list
@@ -69,7 +69,7 @@ base_models = [rf_base, gbm_base, dl_base]
 # Define genetic algorithm parameters
 # Currently using default values recommended by past studies
 pop_size = 10
-num_generations = 20
+num_generations = 10
 crossover_rate = 0.85
 mutation_rate = 0.2
 
