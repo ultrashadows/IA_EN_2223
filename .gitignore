@@ -1,5 +1,5 @@
 results/
-resources/train.csv
+resources/
 
 # GENERATED .GITIGNORE
 htmlcov/
