@@ -1,4 +1,6 @@
 import random
+import time
+
 import h2o
 import os
 import pandas as pd
@@ -11,6 +13,23 @@ from h2o.estimators.random_forest import H2ORandomForestEstimator
 
 crossover_rate = 0.85
 mutation_rate = 0.70
+
+
+def test(best_model, train_data, test_data, target_col='label'):
+    train_frame = h2o.H2OFrame(train_data)
+    train_frame[target_col] = train_frame[target_col].asfactor()
+
+    test_frame = h2o.H2OFrame(test_data)
+    test_frame[target_col] = test_frame[target_col].asfactor()
+
+    print("Training best model...")
+    best_model.train(x=train_frame.columns, y=target_col, training_frame=train_frame)
+
+    print("Predicting best model...")
+    predictions = best_model.predict(test_frame).as_data_frame()['predict'].tolist()
+
+    print("Creating Kaggle frame...")
+    return pd.DataFrame({'ID': test_data['Id'], 'label': predictions})
 
 
 def train(population, generations, train_data, target_col='label'):
@@ -60,7 +79,8 @@ def train(population, generations, train_data, target_col='label'):
             worse = worse_fit(population, fitness_scores)
             population.remove(worse)
 
-        # Check if current fitness is better than the best fitness so far
+        # TODO 1 Check if current fitness is better than the best fitness so far
+    # TODO 2 Save the best model
 
 
 def worse_fit(population, fitness_scores):
@@ -86,8 +106,8 @@ def fitness(predictions, train_labels):
 
 def crossover(p0: H2OEstimator, p1: H2OEstimator):
     if isinstance(p0, H2ORandomForestEstimator) or isinstance(p0, H2OGradientBoostingEstimator):
-        ntrees, max_depth = (p0.ntrees, p1.max_depth)\
-            if np.random.choice([True, False])\
+        ntrees, max_depth = (p0.ntrees, p1.max_depth) \
+            if np.random.choice([True, False]) \
             else (p1.ntrees, p0.max_depth)
 
         p0.ntrees = ntrees
@@ -122,12 +142,10 @@ current_dir = os.path.dirname(__file__)
 resources_dir = os.path.join(current_dir, 'resources')
 train_csv = pd.read_csv(os.path.join(resources_dir, 'train.csv'))
 
-# Start H2O
 h2o.init(ip="localhost", port=54321, max_mem_size_GB=4)
 
 population_size = random.randint(2, 5)
 generations_size = random.randint(2, 2)
-
 print("Population", population_size)
 print("Generations", generations_size)
 
@@ -150,14 +168,18 @@ deep_learning = [H2ODeepLearningEstimator(
 ) for _ in range(population_size)]
 
 print("Training Distributed Random Forest...")
-#train(drf, generations_size, train_csv)
+# train(drf, generations_size, train_csv)
 
 print("Training Gradient Boosting....")
-#train(gbm, generations_size, train_csv)
+# train(gbm, generations_size, train_csv)
 
 print("Training Deep Learning")
 train(deep_learning, generations_size, train_csv)
 
-print("DONE")
-while True:
-    pass
+kaggle = test(best_model=None, train_data=train_csv, test_data=None)
+current_time_millis = int(round(time.time() * 1000))
+results_dir = os.path.join(current_dir, 'predictions_' + str(current_time_millis) + ".csv")
+kaggle.to_csv(results_dir, index=False)
+
+# TODO 3 Load model into population
+# TODO 4 Plot Accuracy across generations
