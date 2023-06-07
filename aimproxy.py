@@ -133,5 +133,12 @@ gbm = [H2OGradientBoostingEstimator(
 train(drf, generations_size, train_csv)
 train(gbm, generations_size, train_csv)
 
+print("Training Gradient Boosting....")
+#train(gbm, generations_size, train_csv)
+
+print("Training Deep Learning")
+train(deep_learning, generations_size, train_csv)
+
+print("DONE")
 while True:
     pass
