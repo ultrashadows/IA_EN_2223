@@ -163,11 +163,28 @@ population_size = random.randint(2, 2)
 generations_size = random.randint(2, 2)
 print("Population, Generations", population_size, generations_size)
 
+drf_seed = None
+gbm_seed = None
+dl_seed = None
+
+if os.path.exists(os.path.join(resources_dir, 'seeds.txt')):
+    with open(os.path.join(resources_dir, 'seeds.txt'), 'r') as file:
+        drf_seed = int(file.readline().strip())
+        gbm_seed = int(file.readline().strip())
+        dl_seed = int(file.readline().strip())
+
 print("Initializing Distributed Random Forest...")
 drf_population = [H2ORandomForestEstimator(
     ntrees=random.randint(5, 10),
     max_depth=random.randint(3, 7)
 ) for _ in range(population_size)]
+
+if drf_seed is not None:
+    drf_population.append(H2ORandomForestEstimator(
+        ntrees=random.randint(5, 10),
+        max_depth=random.randint(3, 7),
+        seed=drf_seed
+    ))
 
 print("Initializing Gradient Boosting...")
 gbm_population = [H2OGradientBoostingEstimator(
@@ -175,11 +192,27 @@ gbm_population = [H2OGradientBoostingEstimator(
     max_depth=random.randint(3, 7)
 ) for _ in range(population_size)]
 
+if gbm_seed is not None:
+    gbm_population.append(
+        H2OGradientBoostingEstimator(
+            ntrees=random.randint(5, 10),
+            max_depth=random.randint(3, 7),
+            seed=gbm_seed
+        ))
+
 print("Initializing Deep Learning...")
 dl_population = [H2ODeepLearningEstimator(
     hidden=[25, 50, 40],
     epochs=5
 ) for _ in range(population_size)]
+
+if dl_seed is not None:
+    dl_population.append(
+        H2ODeepLearningEstimator(
+            hidden=[25, 50, 40],
+            epochs=5,
+            seed=dl_seed
+        ))
 
 # Variable to generate files based on timestamp
 timestamp = int(round(time.time() * 1000))
@@ -189,21 +222,18 @@ Distributed Random Forest
 """
 print("Training DRF...")
 drf_model, drf_accuracy = train(drf_population, generations_size, train_csv)
-h2o.save_model(drf_model, path=resources_dir, filename=f'drf_{str(timestamp)}', force=True)
 
 """
 Gradient Boosting
 """
 print("Training GBM....")
 gbm_model, gdm_accuracy = train(gbm_population, generations_size, train_csv)
-h2o.save_model(gbm_model, path=resources_dir, filename=f'gbm_{str(timestamp)}', force=True)
 
 """
 Deep Learning
 """
 print("Training DL...")
 dl_model, dl_accuracy = train(dl_population, generations_size, train_csv)
-h2o.save_model(dl_model, path=resources_dir, filename=f'dl_{str(timestamp)}.txt', force=True)
 
 """
 Kaggle
@@ -211,6 +241,14 @@ Kaggle
 least_models = [drf_accuracy, gdm_accuracy, dl_accuracy]
 best_accuracy = max(least_models)
 best_model = least_models[least_models.index(best_accuracy)]
+
+"""
+Save Seeds
+"""
+with open(os.path.join(resources_dir, 'seeds.txt'), 'w') as file:
+    file.write(str(drf_model.params.get('seed').get('actual')) + '\n')
+    file.write(str(gbm_model.params.get('seed').get('actual')) + '\n')
+    file.write(str(dl_model.params.get('seed').get('actual')) + '\n')
 
 kaggle_file = os.path.join(resources_dir, f'kaggle_{str(timestamp)}.csv')
 dl_kaggle = test(dl_model, train_csv, test_csv)
