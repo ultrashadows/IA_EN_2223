@@ -5,6 +5,7 @@ import h2o
 import os
 import pandas as pd
 import numpy as np
+import matplotlib.pyplot as plt
 
 from h2o.estimators import H2OEstimator
 from h2o.estimators.deeplearning import H2ODeepLearningEstimator
@@ -51,6 +52,7 @@ def train(population, generations, train_data, target_col='label'):
     test_labels = test_frame.as_data_frame()[target_col].tolist()
 
     # Variables to define the best generation model
+    accuracy_across_generations = []
     generation_accuracy = 0
     generation_model = None
     for generation in range(generations):
@@ -62,6 +64,7 @@ def train(population, generations, train_data, target_col='label'):
         # Variables to define the best population model
         population_accuracy = max(fitness_scores)
         population_model = population[fitness_scores.index(population_accuracy)]
+        accuracy_across_generations.append(population_accuracy)
 
         # Select the best models for reproduction (elitism)
         [parent0, parent1] = best_chromosomes(population, fitness_scores)
@@ -85,7 +88,7 @@ def train(population, generations, train_data, target_col='label'):
             generation_accuracy = population_accuracy
             generation_model = population_model
 
-    return generation_model, generation_accuracy
+    return generation_model, generation_accuracy, accuracy_across_generations
 
 
 def evolve(population, train_frame, test_frame, target_col, test_labels):
@@ -156,6 +159,20 @@ def mutate(chromosome: H2OEstimator):
     pass
 
 
+def accuracy_across_generations_graph(graph_dir, generations, accuracy0, accuracy1, accuracy3):
+    plt.plot(generations, accuracy0, marker='o', linestyle='-', color='b', label='Random Forest')
+    plt.plot(generations, accuracy1, marker='o', linestyle='-', color='g', label='Gradient Boosting')
+    plt.plot(generations, accuracy3, marker='o', linestyle='-', color='r', label='Deep Learning')
+    plt.xlabel('Generations')
+    plt.ylabel('Accuracy')
+    plt.title(f'Comparison of Accuracy across {len(generations)} generations')
+    plt.legend()
+    plt.grid(True)
+
+    graph_file = os.path.join(graph_dir, 'accuracy_across_generations_graph.png')
+    plt.savefig(graph_file)
+
+
 """
 ClosedAI MNIST Problem (DRF, GBM, DL)
 """
@@ -188,22 +205,33 @@ timestamp = int(round(time.time() * 1000))
 Distributed Random Forest
 """
 print("Training DRF...")
-drf_model, drf_accuracy = train(drf_population, generations_size, train_csv)
+drf_model, drf_accuracy, drf_accuracies = train(drf_population, generations_size, train_csv)
 h2o.save_model(drf_model, path=resources_dir, filename=f'drf_{str(timestamp)}', force=True)
 
 """
 Gradient Boosting
 """
 print("Training GBM....")
-gbm_model, gdm_accuracy = train(gbm_population, generations_size, train_csv)
+gbm_model, gdm_accuracy, gdm_accuracies = train(gbm_population, generations_size, train_csv)
 h2o.save_model(gbm_model, path=resources_dir, filename=f'gbm_{str(timestamp)}', force=True)
 
 """
 Deep Learning
 """
 print("Training DL...")
-dl_model, dl_accuracy = train(dl_population, generations_size, train_csv)
+dl_model, dl_accuracy, dl_accuracies = train(dl_population, generations_size, train_csv)
 h2o.save_model(dl_model, path=resources_dir, filename=f'dl_{str(timestamp)}.txt', force=True)
+
+"""
+Accuracy Graph
+"""
+accuracy_across_generations_graph(
+    resources_dir,
+    range(generations_size),
+    drf_accuracies,
+    gdm_accuracies,
+    dl_accuracies
+)
 
 """
 Kaggle
@@ -217,4 +245,3 @@ dl_kaggle = test(dl_model, train_csv, test_csv)
 dl_kaggle.to_csv(kaggle_file, index=False)
 
 # TODO 3 Load model into population
-# TODO 4 Plot Accuracy across generations
