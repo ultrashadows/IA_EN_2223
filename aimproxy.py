@@ -13,8 +13,8 @@ from h2o.estimators.gbm import H2OGradientBoostingEstimator
 from h2o.estimators.random_forest import H2ORandomForestEstimator
 
 # ClosedAI crossover and mutation params
-crossover_rate = 0.90
-mutation_rate = 0.90
+crossover_rate = 0.75
+mutation_rate = 0.2
 
 # OS Load datasets for train and test data
 current_dir = os.path.dirname(__file__)
@@ -177,8 +177,8 @@ def accuracy_across_generations_graph(graph_dir, generations, accuracy0, accurac
 """
 ClosedAI MNIST Problem (DRF, GBM, DL)
 """
-population_size = random.randint(2, 2)
-generations_size = random.randint(2, 2)
+population_size = random.randint(4, 4)
+generations_size = random.randint(4, 4)
 print("Population, Generations", population_size, generations_size)
 
 drf_seed = None
