@@ -2,8 +2,12 @@ import random
 import h2o
 import os
 import pandas as pd
+import numpy as np
 
 from h2o.estimators.random_forest import H2ORandomForestEstimator
+
+crossover_rate = 0.85
+mutation_rate = 0.70
 
 
 def train(train_data, target_col='label'):
@@ -16,81 +20,96 @@ def train(train_data, target_col='label'):
     # Split train data into training and testing (80/20)
     train_frame, test_frame = train_frame.split_frame(ratios=[0.8])
 
+    # Extract mnist valid labels
+    train_labels = train_frame.as_data_frame()[target_col].tolist()
+
+    print("Initializing Population...")
     population = initialize_population()
 
     generations_size = random.randint(2, 20)
+    print("Generations", generations_size)
     for generation in range(generations_size):
-        fitness_scores = evaluate_population(population, train_frame, test_frame, target_col)
+        print("Evaluating Population...")
+
+        fitness_scores = []
+        for model in population:
+            # Train population with train data
+            model.train(x=train_frame.columns, y=target_col, training_frame=train_frame)
+
+            # Make predictions on the test data
+            predictions = model.predict(test_frame).as_data_frame()['predict'].tolist()
+
+            # Compute accuracy for each model
+            accuracy = fitness(predictions, train_labels)
+            print("Accuracy", accuracy)
+            fitness_scores.append(accuracy)
 
         # Select the best models for reproduction (elitism)
-        [parent0, parent1] = best_chromosomes(fitness_scores)
+        [parent0, parent1] = best_chromosomes(population, fitness_scores)
 
-        chromosome = crossover(parent0, parent1)
-        # child = mutate(chromosome)
+        if np.random.rand() <= crossover_rate:
+            print("Crossover...")
+            chromosome = crossover(parent0, parent1)
 
-        # Replace the least fit model in population with new child
+            if np.random.rand() <= mutation_rate:
+                print("Mutation...")
+                child = mutate(chromosome)
+                population.append(child)
+            else:
+                population.append(chromosome)
+
+            # Remove the least fit model in population
+            worse = worse_fit(population, fitness_scores)
+            population.remove(worse)
 
         # Check if current fitness is better than the best fitness so far
 
 
 def initialize_population():
-    # Initialize the population
-    population = []
-    population_size = random.randint(2, 5)
-
-    for _ in range(population_size):
-        model = H2ORandomForestEstimator(
-            ntrees=random.randint(5, 10),
-            max_depth=random.randint(5, 10),
-            min_rows=random.randint(1, 5),
-        )
-        population.append(model)
-
-    return population
+    return [H2ORandomForestEstimator(
+        ntrees=random.randint(5, 10),
+        max_depth=random.randint(5, 10)
+    ) for _ in range(2)]
 
 
-def evaluate_population(population, train_frame, test_frame, target_col):
-    fitness_scores = []
-    for model in population:
-        # Train population with train data
-        model.train(x=train_frame.columns, y=target_col, training_frame=train_frame)
+def worse_fit(population, fitness_scores):
+    score_idx = 0
+    score_min = fitness_scores[0]
+    for i, score in enumerate(fitness_scores):
+        if score < score_min:
+            score_min = score
+            score_idx = i
 
-        # Make predictions on the test data
-        predictions = model.predict(test_frame)
-
-        # Compute accuracy for each model
-        accuracy = fitness(predictions, train_frame)
-        fitness_scores.append((model, accuracy))
-
-    return fitness_scores
+    return population[score_idx]
 
 
-def fitness(predictions, train_frame):
-    correct_predictions = sum([pred == label for pred, label in zip(predictions, train_frame['label'])])
+def best_chromosomes(population, fitness_scores):
+    total_score = sum(fitness_scores)
+    return np.random.choice(population, size=2, replace=True, p=[score / total_score for score in fitness_scores])
+
+
+def fitness(predictions, train_labels):
+    correct_predictions = sum([pred == label for pred, label in zip(predictions, train_labels)])
 
     return correct_predictions / len(train_labels)
 
 
+def crossover(p0: H2ORandomForestEstimator, p1: H2ORandomForestEstimator):
+    if isinstance(p0, H2ORandomForestEstimator):
+        ntrees, max_depth = (p0.ntrees, p1.max_depth)\
+            if np.random.choice([True, False])\
+            else (p1.ntrees, p0.max_depth)
 
-def best_chromosomes(fitness_scores):
-    # Sort the population based on fitness scores in descending order
-    fitness_scores.sort(key=lambda x: x[1], reverse=True)
-
-    return [model for model, _ in fitness_scores[:2]]
-
-
-def crossover(parent0, parent1):
-    # Perform crossover operation to create a new child model
-    child = H2ORandomForestEstimator(
-        ntrees=random.randint(parent0.ntrees, parent1.ntrees),
-        max_depth=random.randint(parent0.max_depth, parent1.max_depth),
-        min_rows=random.randint(parent0.min_rows, parent1.min_rows),
-    )
-
-    return child
+        return H2ORandomForestEstimator(ntrees=ntrees, max_depth=max_depth)
+    pass
 
 
 def mutate(chromosome):
+    if isinstance(chromosome, H2ORandomForestEstimator):
+        return H2ORandomForestEstimator(
+            ntrees=np.random.randint(chromosome.ntrees * 0.8, chromosome.ntrees * 1.2),
+            max_depth=np.random.randint(chromosome.max_depth * 0.8, chromosome.max_depth * 1.2),
+        )
     pass
 
 
@@ -99,7 +118,9 @@ resources_dir = os.path.join(current_dir, 'resources')
 train_csv = pd.read_csv(os.path.join(resources_dir, 'train.csv'))
 
 # Start H2O
-h2o.init(ip="localhost", port=54321, max_mem_size_GB=2)
-h2o.no_progress()
+h2o.init(ip="localhost", port=54321, max_mem_size_GB=4)
 
 train(train_csv)
+
+while True:
+    pass
