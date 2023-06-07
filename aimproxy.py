@@ -3,8 +3,9 @@ import h2o
 import os
 import pandas as pd
 import numpy as np
-from h2o.estimators import H2OEstimator
 
+from h2o.estimators import H2OEstimator
+from h2o.estimators.deeplearning import H2ODeepLearningEstimator
 from h2o.estimators.gbm import H2OGradientBoostingEstimator
 from h2o.estimators.random_forest import H2ORandomForestEstimator
 
@@ -23,7 +24,7 @@ def train(population, generations, train_data, target_col='label'):
     train_frame, test_frame = train_frame.split_frame(ratios=[0.8])
 
     # Extract mnist valid labels
-    train_labels = train_frame.as_data_frame()[target_col].tolist()
+    test_labels = test_frame.as_data_frame()[target_col].tolist()
 
     for generation in range(generations):
         print("Evaluating Population...")
@@ -37,7 +38,7 @@ def train(population, generations, train_data, target_col='label'):
             predictions = model.predict(test_frame).as_data_frame()['predict'].tolist()
 
             # Compute accuracy for each model
-            accuracy = fitness(predictions, train_labels)
+            accuracy = fitness(predictions, test_labels)
             print("Accuracy", accuracy)
             fitness_scores.append(accuracy)
 
@@ -80,7 +81,6 @@ def best_chromosomes(population, fitness_scores):
 
 def fitness(predictions, train_labels):
     correct_predictions = sum([pred == label for pred, label in zip(predictions, train_labels)])
-
     return correct_predictions / len(train_labels)
 
 
@@ -93,6 +93,11 @@ def crossover(p0: H2OEstimator, p1: H2OEstimator):
         p0.ntrees = ntrees
         p0.max_depth = max_depth
         return p0
+
+    if isinstance(p0, H2ODeepLearningEstimator):
+        p0.hidden[1] = p1.hidden[1]
+        return p0
+
     pass
 
 
@@ -102,6 +107,14 @@ def mutate(chromosome: H2OEstimator):
         chromosome.max_depth = np.random.randint(chromosome.max_depth * 0.8, chromosome.max_depth * 1.2)
         return chromosome
 
+    if isinstance(chromosome, H2ODeepLearningEstimator):
+        layer0 = np.random.randint(chromosome.hidden[0] * 0.85, chromosome.hidden[0] * 1.15)
+        layer1 = np.random.randint(chromosome.hidden[1] * 0.95, chromosome.hidden[1] * 1.25)
+        layer2 = np.random.randint(chromosome.hidden[2] * 0.75, chromosome.hidden[2] * 1.05)
+
+        chromosome.hidden = [layer0, layer1, layer2]
+        chromosome.epochs = np.random.randint(chromosome.epochs * 0.85, chromosome.epochs * 1.15)
+        return chromosome
     pass
 
 
@@ -124,14 +137,20 @@ drf = [H2ORandomForestEstimator(
     max_depth=random.randint(3, 7)
 ) for _ in range(population_size)]
 
-print("Initializing Gradient Boosting Estimator...")
+print("Initializing Gradient Boosting...")
 gbm = [H2OGradientBoostingEstimator(
     ntrees=random.randint(5, 10),
     max_depth=random.randint(3, 7)
 ) for _ in range(population_size)]
 
-train(drf, generations_size, train_csv)
-train(gbm, generations_size, train_csv)
+print("Initializing Deep Learning")
+deep_learning = [H2ODeepLearningEstimator(
+    hidden=[25, 50, 40],
+    epochs=5
+) for _ in range(population_size)]
+
+print("Training Distributed Random Forest...")
+#train(drf, generations_size, train_csv)
 
 print("Training Gradient Boosting....")
 #train(gbm, generations_size, train_csv)
