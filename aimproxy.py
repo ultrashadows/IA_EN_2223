@@ -22,17 +22,17 @@ train_csv = pd.read_csv(os.path.join(resources_dir, 'train.csv'))
 test_csv = pd.read_csv(os.path.join(resources_dir, 'test.csv'))
 
 # H2O Init
-h2o.init(ip="localhost", port=54321, max_mem_size_GB=3)
+h2o.init(ip="localhost", port=54321, max_mem_size_GB=2)
 
 
-def test(best_model, train_data, test_data, target_col='label'):
+def test(model, train_data, test_data, target_col='label'):
     train_frame = h2o.H2OFrame(train_data)
     train_frame[target_col] = train_frame[target_col].asfactor()
 
     test_frame = h2o.H2OFrame(test_data)
 
-    best_model.train(x=train_frame.columns, y=target_col, training_frame=train_frame)
-    predictions = best_model.predict(test_frame).as_data_frame()['predict'].tolist()
+    model.train(x=train_frame.columns, y=target_col, training_frame=train_frame)
+    predictions = model.predict(test_frame).as_data_frame()['predict'].tolist()
 
     return pd.DataFrame({'ID': test_data['Id'], 'label': predictions})
 
@@ -85,7 +85,7 @@ def train(population, generations, train_data, target_col='label'):
             generation_accuracy = population_accuracy
             generation_model = population_model
 
-    return generation_model
+    return generation_model, generation_accuracy
 
 
 def evolve(population, train_frame, test_frame, target_col, test_labels):
@@ -175,7 +175,7 @@ gbm_population = [H2OGradientBoostingEstimator(
     max_depth=random.randint(3, 7)
 ) for _ in range(population_size)]
 
-print("Initializing Deep Learning")
+print("Initializing Deep Learning...")
 dl_population = [H2ODeepLearningEstimator(
     hidden=[25, 50, 40],
     epochs=5
@@ -188,37 +188,33 @@ timestamp = int(round(time.time() * 1000))
 Distributed Random Forest
 """
 print("Training DRF...")
-drf_model = train(drf_population, generations_size, train_csv)
+drf_model, drf_accuracy = train(drf_population, generations_size, train_csv)
 h2o.save_model(drf_model, path=resources_dir, filename=f'drf_{str(timestamp)}', force=True)
-
-print("Testing DRF...")
-results_dir = os.path.join(current_dir, f'kaggle_drf_{str(timestamp)}.csv')
-drf_kaggle = test(drf_model, train_csv, test_csv)
-drf_kaggle.to_csv(results_dir, index=False)
 
 """
 Gradient Boosting
 """
-# print("Training GBM....")
-# gbm_model = train(gbm_population, generations_size, train_csv)
-# h2o.save_model(gbm_model, path=resources_dir, filename=f'gbm_{str(timestamp)}', force=True)
-#
-# print("Testing GBM...")
-# results_dir = os.path.join(current_dir, f'kaggle_gbm_{str(timestamp)}.csv')
-# gbm_kaggle = test(gbm_model, train_csv, test_csv)
-# gbm_kaggle.to_csv(results_dir, index=False)
+print("Training GBM....")
+gbm_model, gdm_accuracy = train(gbm_population, generations_size, train_csv)
+h2o.save_model(gbm_model, path=resources_dir, filename=f'gbm_{str(timestamp)}', force=True)
 
 """
 Deep Learning
 """
-# print("Training DL...")
-# dl_model = train(dl_population, generations_size, train_csv)
-# h2o.save_model(dl_model, path=resources_dir, filename=f'dl_{str(timestamp)}.txt', force=True)
-#
-# print("Testing DL...")
-# results_dir = os.path.join(current_dir, f'kaggle_dl_{str(timestamp)}.csv')
-# dl_kaggle = test(dl_model, train_csv, test_csv)
-# dl_kaggle.to_csv(results_dir, index=False)
+print("Training DL...")
+dl_model, dl_accuracy = train(dl_population, generations_size, train_csv)
+h2o.save_model(dl_model, path=resources_dir, filename=f'dl_{str(timestamp)}.txt', force=True)
+
+"""
+Kaggle
+"""
+least_models = [drf_accuracy, gdm_accuracy, dl_accuracy]
+best_accuracy = max(least_models)
+best_model = least_models[least_models.index(best_accuracy)]
+
+kaggle_file = os.path.join(resources_dir, f'kaggle_{str(timestamp)}.csv')
+dl_kaggle = test(dl_model, train_csv, test_csv)
+dl_kaggle.to_csv(kaggle_file, index=False)
 
 # TODO 3 Load model into population
 # TODO 4 Plot Accuracy across generations
