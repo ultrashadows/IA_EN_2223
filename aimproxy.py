@@ -68,8 +68,8 @@ def evaluate_population(population, train_frame, test_frame, target_col):
 def fitness(predictions, train_frame):
     correct_predictions = sum([pred == label for pred, label in zip(predictions, train_frame['label'])])
 
-    # Compute accuracy
-    return correct_predictions / len(train_frame)
+    return correct_predictions / len(train_labels)
+
 
 
 def best_chromosomes(fitness_scores):
