@@ -3,6 +3,7 @@ import h2o
 import os
 import pandas as pd
 import numpy as np
+from h2o.estimators import H2OEstimator
 
 from h2o.estimators.gbm import H2OGradientBoostingEstimator
 from h2o.estimators.random_forest import H2ORandomForestEstimator
@@ -11,7 +12,7 @@ crossover_rate = 0.85
 mutation_rate = 0.70
 
 
-def train(train_data, target_col='label'):
+def train(population, generations, train_data, target_col='label'):
     # Convert the training data to an H2O Frame
     train_frame = h2o.H2OFrame(train_data)
 
@@ -24,12 +25,7 @@ def train(train_data, target_col='label'):
     # Extract mnist valid labels
     train_labels = train_frame.as_data_frame()[target_col].tolist()
 
-    print("Initializing Population...")
-    population = initialize_population()
-
-    generations_size = random.randint(2, 20)
-    print("Generations", generations_size)
-    for generation in range(generations_size):
+    for generation in range(generations):
         print("Evaluating Population...")
 
         fitness_scores = []
@@ -66,13 +62,6 @@ def train(train_data, target_col='label'):
         # Check if current fitness is better than the best fitness so far
 
 
-def initialize_population():
-    return [H2ORandomForestEstimator(
-        ntrees=random.randint(5, 10),
-        max_depth=random.randint(5, 10)
-    ) for _ in range(2)]
-
-
 def worse_fit(population, fitness_scores):
     score_idx = 0
     score_min = fitness_scores[0]
@@ -95,22 +84,24 @@ def fitness(predictions, train_labels):
     return correct_predictions / len(train_labels)
 
 
-def crossover(p0: H2ORandomForestEstimator, p1: H2ORandomForestEstimator):
-    if isinstance(p0, H2ORandomForestEstimator):
+def crossover(p0: H2OEstimator, p1: H2OEstimator):
+    if isinstance(p0, H2ORandomForestEstimator) or isinstance(p0, H2OGradientBoostingEstimator):
         ntrees, max_depth = (p0.ntrees, p1.max_depth)\
             if np.random.choice([True, False])\
             else (p1.ntrees, p0.max_depth)
 
-        return H2ORandomForestEstimator(ntrees=ntrees, max_depth=max_depth)
+        p0.ntrees = ntrees
+        p0.max_depth = max_depth
+        return p0
     pass
 
 
-def mutate(chromosome):
-    if isinstance(chromosome, H2ORandomForestEstimator):
-        return H2ORandomForestEstimator(
-            ntrees=np.random.randint(chromosome.ntrees * 0.8, chromosome.ntrees * 1.2),
-            max_depth=np.random.randint(chromosome.max_depth * 0.8, chromosome.max_depth * 1.2),
-        )
+def mutate(chromosome: H2OEstimator):
+    if isinstance(chromosome, H2ORandomForestEstimator) or isinstance(chromosome, H2OGradientBoostingEstimator):
+        chromosome.ntrees = np.random.randint(chromosome.ntrees * 0.8, chromosome.ntrees * 1.2)
+        chromosome.max_depth = np.random.randint(chromosome.max_depth * 0.8, chromosome.max_depth * 1.2)
+        return chromosome
+
     pass
 
 
@@ -121,7 +112,26 @@ train_csv = pd.read_csv(os.path.join(resources_dir, 'train.csv'))
 # Start H2O
 h2o.init(ip="localhost", port=54321, max_mem_size_GB=4)
 
-train(train_csv)
+population_size = random.randint(2, 5)
+generations_size = random.randint(2, 2)
+
+print("Population", population_size)
+print("Generations", generations_size)
+
+print("Initializing Distributed Random Forest...")
+drf = [H2ORandomForestEstimator(
+    ntrees=random.randint(5, 10),
+    max_depth=random.randint(3, 7)
+) for _ in range(population_size)]
+
+print("Initializing Gradient Boosting Estimator...")
+gbm = [H2OGradientBoostingEstimator(
+    ntrees=random.randint(5, 10),
+    max_depth=random.randint(3, 7)
+) for _ in range(population_size)]
+
+train(drf, generations_size, train_csv)
+train(gbm, generations_size, train_csv)
 
 while True:
     pass
