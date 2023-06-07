@@ -4,6 +4,7 @@ import os
 import pandas as pd
 import numpy as np
 
+from h2o.estimators.gbm import H2OGradientBoostingEstimator
 from h2o.estimators.random_forest import H2ORandomForestEstimator
 
 crossover_rate = 0.85
