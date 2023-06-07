@@ -169,7 +169,8 @@ def accuracy_across_generations_graph(graph_dir, generations, accuracy0, accurac
     plt.legend()
     plt.grid(True)
 
-    graph_file = os.path.join(graph_dir, 'accuracy_across_generations_graph.png')
+    graph_timestamp = int(round(time.time() * 1000))
+    graph_file = os.path.join(graph_dir, f'accuracy_across_generations_graph_{graph_timestamp}.png')
     plt.savefig(graph_file)
 
 
