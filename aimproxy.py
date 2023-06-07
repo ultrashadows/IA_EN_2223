@@ -11,8 +11,18 @@ from h2o.estimators.deeplearning import H2ODeepLearningEstimator
 from h2o.estimators.gbm import H2OGradientBoostingEstimator
 from h2o.estimators.random_forest import H2ORandomForestEstimator
 
-crossover_rate = 0.85
-mutation_rate = 0.70
+# ClosedAI crossover and mutation params
+crossover_rate = 0.90
+mutation_rate = 0.90
+
+# OS Load datasets for train and test data
+current_dir = os.path.dirname(__file__)
+resources_dir = os.path.join(current_dir, 'resources')
+train_csv = pd.read_csv(os.path.join(resources_dir, 'train.csv'))
+test_csv = pd.read_csv(os.path.join(resources_dir, 'test.csv'))
+
+# H2O Init
+h2o.init(ip="localhost", port=54321, max_mem_size_GB=3)
 
 
 def test(best_model, train_data, test_data, target_col='label'):
@@ -20,15 +30,10 @@ def test(best_model, train_data, test_data, target_col='label'):
     train_frame[target_col] = train_frame[target_col].asfactor()
 
     test_frame = h2o.H2OFrame(test_data)
-    test_frame[target_col] = test_frame[target_col].asfactor()
 
-    print("Training best model...")
     best_model.train(x=train_frame.columns, y=target_col, training_frame=train_frame)
-
-    print("Predicting best model...")
     predictions = best_model.predict(test_frame).as_data_frame()['predict'].tolist()
 
-    print("Creating Kaggle frame...")
     return pd.DataFrame({'ID': test_data['Id'], 'label': predictions})
 
 
@@ -45,58 +50,72 @@ def train(population, generations, train_data, target_col='label'):
     # Extract mnist valid labels
     test_labels = test_frame.as_data_frame()[target_col].tolist()
 
+    # Variables to define the best generation model
+    generation_accuracy = 0
+    generation_model = None
     for generation in range(generations):
-        print("Evaluating Population...")
+        print("Generation", generation)
 
-        fitness_scores = []
-        for model in population:
-            # Train population with train data
-            model.train(x=train_frame.columns, y=target_col, training_frame=train_frame)
+        # Run Train and Test on train & test data frames
+        fitness_scores = evolve(population, train_frame, test_frame, target_col, test_labels)
 
-            # Make predictions on the test data
-            predictions = model.predict(test_frame).as_data_frame()['predict'].tolist()
-
-            # Compute accuracy for each model
-            accuracy = fitness(predictions, test_labels)
-            print("Accuracy", accuracy)
-            fitness_scores.append(accuracy)
+        # Variables to define the best population model
+        population_accuracy = max(fitness_scores)
+        population_model = population[fitness_scores.index(population_accuracy)]
 
         # Select the best models for reproduction (elitism)
         [parent0, parent1] = best_chromosomes(population, fitness_scores)
 
+        # Perform genetic operations
         if np.random.rand() <= crossover_rate:
-            print("Crossover...")
             chromosome = crossover(parent0, parent1)
 
             if np.random.rand() <= mutation_rate:
-                print("Mutation...")
                 child = mutate(chromosome)
                 population.append(child)
             else:
                 population.append(chromosome)
 
-            # Remove the least fit model in population
-            worse = worse_fit(population, fitness_scores)
+            # Remove the worst fit model in population
+            worse = worst_fit(population, fitness_scores)
             population.remove(worse)
 
-        # TODO 1 Check if current fitness is better than the best fitness so far
-    # TODO 2 Save the best model
+        # Check if current fitness is better than the best fitness so far
+        if population_accuracy > generation_accuracy:
+            generation_accuracy = population_accuracy
+            generation_model = population_model
+
+    return generation_model
 
 
-def worse_fit(population, fitness_scores):
-    score_idx = 0
-    score_min = fitness_scores[0]
-    for i, score in enumerate(fitness_scores):
-        if score < score_min:
-            score_min = score
-            score_idx = i
+def evolve(population, train_frame, test_frame, target_col, test_labels):
+    fitness_scores = []
+    for model in population:
+        # Train population with train data
+        model.train(x=train_frame.columns, y=target_col, training_frame=train_frame)
 
+        # Make predictions on the test data
+        predictions = model.predict(test_frame).as_data_frame()['predict'].tolist()
+
+        # Compute accuracy for each model
+        accuracy = fitness(predictions, test_labels)
+
+        print("Accuracy", accuracy)
+        fitness_scores.append(accuracy)
+
+    return fitness_scores
+
+
+def worst_fit(population, fitness_scores):
+    worst_score = min(fitness_scores)
+    score_idx = fitness_scores.index(worst_score)
     return population[score_idx]
 
 
 def best_chromosomes(population, fitness_scores):
     total_score = sum(fitness_scores)
-    return np.random.choice(population, size=2, replace=True, p=[score / total_score for score in fitness_scores])
+    probability = [score / total_score for score in fitness_scores]
+    return np.random.choice(population, size=2, replace=True, p=probability)
 
 
 def fitness(predictions, train_labels):
@@ -117,7 +136,6 @@ def crossover(p0: H2OEstimator, p1: H2OEstimator):
     if isinstance(p0, H2ODeepLearningEstimator):
         p0.hidden[1] = p1.hidden[1]
         return p0
-
     pass
 
 
@@ -138,49 +156,69 @@ def mutate(chromosome: H2OEstimator):
     pass
 
 
-current_dir = os.path.dirname(__file__)
-resources_dir = os.path.join(current_dir, 'resources')
-train_csv = pd.read_csv(os.path.join(resources_dir, 'train.csv'))
-
-h2o.init(ip="localhost", port=54321, max_mem_size_GB=4)
-
-population_size = random.randint(2, 5)
+"""
+ClosedAI MNIST Problem (DRF, GBM, DL)
+"""
+population_size = random.randint(2, 2)
 generations_size = random.randint(2, 2)
-print("Population", population_size)
-print("Generations", generations_size)
+print("Population, Generations", population_size, generations_size)
 
 print("Initializing Distributed Random Forest...")
-drf = [H2ORandomForestEstimator(
+drf_population = [H2ORandomForestEstimator(
     ntrees=random.randint(5, 10),
     max_depth=random.randint(3, 7)
 ) for _ in range(population_size)]
 
 print("Initializing Gradient Boosting...")
-gbm = [H2OGradientBoostingEstimator(
+gbm_population = [H2OGradientBoostingEstimator(
     ntrees=random.randint(5, 10),
     max_depth=random.randint(3, 7)
 ) for _ in range(population_size)]
 
 print("Initializing Deep Learning")
-deep_learning = [H2ODeepLearningEstimator(
+dl_population = [H2ODeepLearningEstimator(
     hidden=[25, 50, 40],
     epochs=5
 ) for _ in range(population_size)]
 
-print("Training Distributed Random Forest...")
-# train(drf, generations_size, train_csv)
+# Variable to generate files based on timestamp
+timestamp = int(round(time.time() * 1000))
 
-print("Training Gradient Boosting....")
-# train(gbm, generations_size, train_csv)
+"""
+Distributed Random Forest
+"""
+print("Training DRF...")
+drf_model = train(drf_population, generations_size, train_csv)
+h2o.save_model(drf_model, path=resources_dir, filename=f'drf_{str(timestamp)}', force=True)
 
-print("Training Deep Learning")
-train(deep_learning, generations_size, train_csv)
+print("Testing DRF...")
+results_dir = os.path.join(current_dir, f'kaggle_drf_{str(timestamp)}.csv')
+drf_kaggle = test(drf_model, train_csv, test_csv)
+drf_kaggle.to_csv(results_dir, index=False)
 
-# TODO Kaggle load test data
-kaggle = test(best_model=None, train_data=train_csv, test_data=None)
-current_time_millis = int(round(time.time() * 1000))
-results_dir = os.path.join(current_dir, 'predictions_' + str(current_time_millis) + ".csv")
-kaggle.to_csv(results_dir, index=False)
+"""
+Gradient Boosting
+"""
+# print("Training GBM....")
+# gbm_model = train(gbm_population, generations_size, train_csv)
+# h2o.save_model(gbm_model, path=resources_dir, filename=f'gbm_{str(timestamp)}', force=True)
+#
+# print("Testing GBM...")
+# results_dir = os.path.join(current_dir, f'kaggle_gbm_{str(timestamp)}.csv')
+# gbm_kaggle = test(gbm_model, train_csv, test_csv)
+# gbm_kaggle.to_csv(results_dir, index=False)
+
+"""
+Deep Learning
+"""
+# print("Training DL...")
+# dl_model = train(dl_population, generations_size, train_csv)
+# h2o.save_model(dl_model, path=resources_dir, filename=f'dl_{str(timestamp)}.txt', force=True)
+#
+# print("Testing DL...")
+# results_dir = os.path.join(current_dir, f'kaggle_dl_{str(timestamp)}.csv')
+# dl_kaggle = test(dl_model, train_csv, test_csv)
+# dl_kaggle.to_csv(results_dir, index=False)
 
 # TODO 3 Load model into population
 # TODO 4 Plot Accuracy across generations
