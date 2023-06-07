@@ -1,223 +1,284 @@
-# Import necessary libraries
 import random
+import time
+
 import h2o
-from h2o.estimators import H2ORandomForestEstimator, H2OGradientBoostingEstimator, H2ODeepLearningEstimator
+import os
 import pandas as pd
 import numpy as np
-import os
-import time
-import logging
 import matplotlib.pyplot as plt
 
-# Start H2O
-h2o.init(ip="localhost", port=54321, max_mem_size_GB=12)
+from h2o.estimators import H2OEstimator
+from h2o.estimators.deeplearning import H2ODeepLearningEstimator
+from h2o.estimators.gbm import H2OGradientBoostingEstimator
+from h2o.estimators.random_forest import H2ORandomForestEstimator
 
-# Change default H2O settings for performance
-h2o.no_progress()
+# ClosedAI crossover and mutation params
+crossover_rate = 0.90
+mutation_rate = 0.90
 
-# Fetch resources directory
+# OS Load datasets for train and test data
 current_dir = os.path.dirname(__file__)
 resources_dir = os.path.join(current_dir, 'resources')
-results_dir = os.path.join(current_dir, 'results')
-logs_dir = os.path.join(current_dir, 'logs')
+train_csv = pd.read_csv(os.path.join(resources_dir, 'train.csv'))
+test_csv = pd.read_csv(os.path.join(resources_dir, 'test.csv'))
 
-# Create directories if they do not exist
-for dir in [resources_dir, results_dir, logs_dir]:
-    if not os.path.exists(dir):
-        os.makedirs(dir)
-
-# Logger config
-current_time_millis = int(round(time.time() * 1000))
-log_file = os.path.join(logs_dir, 'log_' + str(current_time_millis) + ".log")
-logging.basicConfig(filename=log_file,
-                    level=logging.INFO,
-                    format='%(asctime)s %(levelname)s: %(message)s',
-                    datefmt='%d:%m:%Y %H:%M:%S')
-
-# Load train data from Kaggle competition
-logging.info("Importing and handling training and testing data...")
-train_data = pd.read_csv(os.path.join(resources_dir, 'train.csv'))
-
-# Split train data into training and testing (80/20)
-train_data_len = len(train_data)
-train_data_split = int(train_data_len * 0.8)
-train_data_train = train_data.iloc[:train_data_split]
-train_data_test = train_data.iloc[train_data_split:]
-
-# Convert data to H2O frames
-train_h2o_train = h2o.H2OFrame(train_data_train)
-train_h2o_test = h2o.H2OFrame(train_data_test)
-
-# Load test data
-test_data = pd.read_csv(os.path.join(resources_dir, 'test.csv'))
-test_h2o = h2o.H2OFrame(test_data)
-
-# Set the response column for training purposes
-train_h2o_train["label"] = train_h2o_train["label"].asfactor()
-
-# Define a random seed
-random_seed = random.randint(0, 100000)
-
-# Define three base models
-rf_base = H2ORandomForestEstimator(ntrees=30, mtries=28, max_depth=10, nfolds=5, seed=random_seed)
-gbm_base = H2OGradientBoostingEstimator(ntrees=30, max_depth=10, nfolds=5, seed=random_seed)
-dl_base = H2ODeepLearningEstimator(hidden=[75, 75, 75], epochs=20, nfolds=5, seed=random_seed)
-
-# Add base models to a list
-base_models = [rf_base, gbm_base, dl_base]
-
-# Define genetic algorithm parameters
-# Currently using default values recommended by past studies
-pop_size = 10
-num_generations = 20
-crossover_rate = 0.85
-mutation_rate = 0.2
-
-models_trained = 0
-fitness_scores_history = []
+# H2O Init
+h2o.init(ip="localhost", port=54321, max_mem_size_GB=2)
 
 
-# Define fitness function
-def fitness(model):
-    global models_trained
-    models_trained += 1
+def test(model, train_data, test_data, target_col='label'):
+    train_frame = h2o.H2OFrame(train_data)
+    train_frame[target_col] = train_frame[target_col].asfactor()
 
-    model.train(x=train_h2o_train.names[:-1], y="label", training_frame=train_h2o_train)
-    predictions = model.predict(train_h2o_test).as_data_frame()['predict'].tolist()
-    label_guess = pd.Series(train_data_train['label']).mode()[0]
-    predictions = [label_guess if np.isnan(x) else x for x in predictions]
-    correct_predictions = sum([pred == label for pred, label in zip(predictions, train_data_test['label'])])
-    accuracy = correct_predictions / len(train_data_test)
-    print("Model Accuracy: {:.2f}%".format(accuracy * 100), " , Models Trained: ", models_trained, "/",
-          str(pop_size * num_generations))
-    logging.info("Model Accuracy: {:.2f}%".format(accuracy * 100) + " , Models Trained: "
-                 + str(models_trained) + "/" + str(pop_size * num_generations))
-    return accuracy, correct_predictions, predictions
+    test_frame = h2o.H2OFrame(test_data)
+
+    model.train(x=train_frame.columns, y=target_col, training_frame=train_frame)
+    predictions = model.predict(test_frame).as_data_frame()['predict'].tolist()
+
+    return pd.DataFrame({'ID': test_data['Id'], 'label': predictions})
 
 
-# Define genetic operators (crossover and mutation)
-def crossover(model1, model2):
-    model1_params = model1.params
-    model2_params = model2.params
+def train(population, generations, train_data, target_col='label'):
+    # Convert the training data to an H2O Frame
+    train_frame = h2o.H2OFrame(train_data)
 
-    for key in model1_params:
-        if isinstance(model1_params[key], list):
-            if np.random.rand() <= crossover_rate:
-                model1_params[key], model2_params[key] = model2_params[key], model1_params[key]
+    # Specify the target column
+    train_frame[target_col] = train_frame[target_col].asfactor()
 
-    new_model = model1.__class__()
-    new_model._parms = model1_params
-    return new_model
+    # Split train data into training and testing (80/20)
+    train_frame, test_frame = train_frame.split_frame(ratios=[0.8])
 
+    # Extract mnist valid labels
+    test_labels = test_frame.as_data_frame()[target_col].tolist()
 
-def mutation(model):
-    model_params = model.params
+    # Variables to define the best generation model
+    accuracy_across_generations = []
+    generation_accuracy = 0
+    generation_model = None
+    for generation in range(generations):
+        print("Generation", generation)
 
-    for key in model_params:
-        if isinstance(model_params[key], list):
+        # Run Train and Test on train & test data frames
+        fitness_scores = evolve(population, train_frame, test_frame, target_col, test_labels)
+
+        # Variables to define the best population model
+        population_accuracy = max(fitness_scores)
+        population_model = population[fitness_scores.index(population_accuracy)]
+        accuracy_across_generations.append(population_accuracy)
+
+        # Select the best models for reproduction (elitism)
+        [parent0, parent1] = best_chromosomes(population, fitness_scores)
+
+        # Perform genetic operations
+        if np.random.rand() <= crossover_rate:
+            chromosome = crossover(parent0, parent1)
+
             if np.random.rand() <= mutation_rate:
-                new_val = np.random.choice(model_params[key])
-                model_params[key] = new_val
+                child = mutate(chromosome)
+                population.append(child)
+            else:
+                population.append(chromosome)
 
-    new_model = model.__class__()
-    new_model._parms = model_params
-    return new_model
+            # Remove the worst fit model in population
+            worse = worst_fit(population, fitness_scores)
+            population.remove(worse)
 
+        # Check if current fitness is better than the best fitness so far
+        if population_accuracy > generation_accuracy:
+            generation_accuracy = population_accuracy
+            generation_model = population_model
 
-# Initialize population
-population = [np.random.choice(base_models) for _ in range(pop_size)]
-
-# Initialize best accuracy
-best_accuracy_file = os.path.join(resources_dir, 'best_accuracy.txt')
-if os.path.exists(best_accuracy_file):
-    # Load the saved accuracy
-    with open(best_accuracy_file, 'r') as file:
-        best_accuracy = float(file.readline().strip())
-else:
-    best_accuracy = 0
-
-# Initialize best model
-best_model_file = os.path.join(resources_dir, 'best_model')
-if os.path.exists(best_model_file):
-    # Load the saved model
-    best_model = h2o.load_model(best_model_file)
-else:
-    # No best model found, create a new one
-    best_model = None
-
-# Evolve population
-for generation in range(num_generations):
-    logging.info("Beginning models training...")
-
-    # Evaluate fitness
-    fitness_scores = [fitness(model) for model in population]
-
-    # Select parents for crossover
-    parent1, parent2 = np.random.choice(population, size=2, replace=True,
-                                        p=[score[0] for score in fitness_scores] / np.sum(
-                                            [score[0] for score in fitness_scores]))
-
-    # Perform genetic operations
-    child1 = crossover(parent1, parent2)
-    child2 = mutation(child1)
-
-    # Replace the least fit model in population with new child
-    least_fit = np.argmin([score[0] for score in fitness_scores])
-    population[least_fit] = child2
-
-    # Evaluate the best fitness and model
-    current_accuracy = max([score[0] for score in fitness_scores])
-    current_model = population[np.argmax([score[0] for score in fitness_scores])]
-
-    # Save fitness scores for plotting
-    fitness_scores_history.append([score[0] for score in fitness_scores])
-
-    # Check if current fitness is better than the best fitness so far
-    if current_accuracy > best_accuracy:
-        best_accuracy = current_accuracy
-        best_model = current_model
-
-    # Print progress
-    print("Generation: ", generation, " Best accuracy: ", max([score[0] for score in fitness_scores]))
-    logging.info("Generation training complete!")
-    logging.info("Generation: " + str(generation) + " Best accuracy: "
-                 + str(max([score[0] for score in fitness_scores])))
-
-# Save best accuracy
-with open(best_accuracy_file, 'w') as file:
-    file.write(str(best_accuracy))
+    return generation_model, generation_accuracy, accuracy_across_generations
 
 
-# Train best model on full training data
-logging.info("Best model found, training best model...")
-best_model.train(x=train_h2o_train.names[:-1], y="label", training_frame=train_h2o_train)
+def evolve(population, train_frame, test_frame, target_col, test_labels):
+    fitness_scores = []
+    for model in population:
+        # Train population with train data
+        model.train(x=train_frame.columns, y=target_col, training_frame=train_frame)
 
-# Make predictions on the test data
-logging.info("Predicting test data labels...")
-best_model_predictions = best_model.predict(test_h2o).as_data_frame()['predict'].tolist()
+        # Make predictions on the test data
+        predictions = model.predict(test_frame).as_data_frame()['predict'].tolist()
 
-# Save the best model
-logging.info("Saving the best model for future training...")
-h2o.save_model(best_model, path=resources_dir, filename='best_model', force=True)
+        # Compute accuracy for each model
+        accuracy = fitness(predictions, test_labels)
 
-# Create result.csv containing the ID of the test.csv line and the predicted number ("label")
-result_df = pd.DataFrame({'ID': test_data['Id'], 'label': best_model_predictions})
+        print("Accuracy", accuracy)
+        fitness_scores.append(accuracy)
 
-# Save result to results folder
-logging.info("Saving results...")
-result_df.to_csv(os.path.join(results_dir, 'predictions_' + str(current_time_millis) + ".csv"), index=False)
+    return fitness_scores
 
-# Create x-axis values for generations
-generations = range(num_generations)
 
-# Plot the fitness scores
-plt.plot(generations, fitness_scores_history)
-plt.xlabel('Generation')
-plt.ylabel('Fitness Score')
-plt.title('Fitness Score Evolution')
+def worst_fit(population, fitness_scores):
+    worst_score = min(fitness_scores)
+    score_idx = fitness_scores.index(worst_score)
+    return population[score_idx]
 
-# Save the graph as an image
-graph_file = os.path.join(results_dir, 'fitness_graph_' + str(current_time_millis) + '.png')
-plt.savefig(graph_file)
 
-logging.info("Run done!")
+def best_chromosomes(population, fitness_scores):
+    total_score = sum(fitness_scores)
+    probability = [score / total_score for score in fitness_scores]
+    return np.random.choice(population, size=2, replace=True, p=probability)
+
+
+def fitness(predictions, train_labels):
+    correct_predictions = sum([pred == label for pred, label in zip(predictions, train_labels)])
+    return correct_predictions / len(train_labels)
+
+
+def crossover(p0: H2OEstimator, p1: H2OEstimator):
+    if isinstance(p0, H2ORandomForestEstimator) or isinstance(p0, H2OGradientBoostingEstimator):
+        ntrees, max_depth = (p0.ntrees, p1.max_depth) \
+            if np.random.choice([True, False]) \
+            else (p1.ntrees, p0.max_depth)
+
+        p0.ntrees = ntrees
+        p0.max_depth = max_depth
+        return p0
+
+    if isinstance(p0, H2ODeepLearningEstimator):
+        p0.hidden[1] = p1.hidden[1]
+        return p0
+    pass
+
+
+def mutate(chromosome: H2OEstimator):
+    if isinstance(chromosome, H2ORandomForestEstimator) or isinstance(chromosome, H2OGradientBoostingEstimator):
+        chromosome.ntrees = np.random.randint(chromosome.ntrees * 0.8, chromosome.ntrees * 1.2)
+        chromosome.max_depth = np.random.randint(chromosome.max_depth * 0.8, chromosome.max_depth * 1.2)
+        return chromosome
+
+    if isinstance(chromosome, H2ODeepLearningEstimator):
+        layer0 = np.random.randint(chromosome.hidden[0] * 0.85, chromosome.hidden[0] * 1.15)
+        layer1 = np.random.randint(chromosome.hidden[1] * 0.95, chromosome.hidden[1] * 1.25)
+        layer2 = np.random.randint(chromosome.hidden[2] * 0.75, chromosome.hidden[2] * 1.05)
+
+        chromosome.hidden = [layer0, layer1, layer2]
+        chromosome.epochs = np.random.randint(chromosome.epochs * 0.85, chromosome.epochs * 1.15)
+        return chromosome
+    pass
+
+
+def accuracy_across_generations_graph(graph_dir, generations, accuracy0, accuracy1, accuracy3):
+    plt.plot(generations, accuracy0, marker='o', linestyle='-', color='b', label='Random Forest')
+    plt.plot(generations, accuracy1, marker='o', linestyle='-', color='g', label='Gradient Boosting')
+    plt.plot(generations, accuracy3, marker='o', linestyle='-', color='r', label='Deep Learning')
+    plt.xlabel('Generations')
+    plt.ylabel('Accuracy')
+    plt.title(f'Comparison of Accuracy across {len(generations)} generations')
+    plt.legend()
+    plt.grid(True)
+
+    graph_timestamp = int(round(time.time() * 1000))
+    graph_file = os.path.join(graph_dir, f'accuracy_across_generations_graph_{graph_timestamp}.png')
+    plt.savefig(graph_file)
+
+
+"""
+ClosedAI MNIST Problem (DRF, GBM, DL)
+"""
+population_size = random.randint(2, 2)
+generations_size = random.randint(2, 2)
+print("Population, Generations", population_size, generations_size)
+
+drf_seed = None
+gbm_seed = None
+dl_seed = None
+
+if os.path.exists(os.path.join(resources_dir, 'seeds.txt')):
+    with open(os.path.join(resources_dir, 'seeds.txt'), 'r') as file:
+        drf_seed = int(file.readline().strip())
+        gbm_seed = int(file.readline().strip())
+        dl_seed = int(file.readline().strip())
+
+print("Initializing Distributed Random Forest...")
+drf_population = [H2ORandomForestEstimator(
+    ntrees=random.randint(5, 10),
+    max_depth=random.randint(3, 7)
+) for _ in range(population_size)]
+
+if drf_seed is not None:
+    drf_population.append(H2ORandomForestEstimator(
+        ntrees=random.randint(5, 10),
+        max_depth=random.randint(3, 7),
+        seed=drf_seed
+    ))
+
+print("Initializing Gradient Boosting...")
+gbm_population = [H2OGradientBoostingEstimator(
+    ntrees=random.randint(5, 10),
+    max_depth=random.randint(3, 7)
+) for _ in range(population_size)]
+
+if gbm_seed is not None:
+    gbm_population.append(
+        H2OGradientBoostingEstimator(
+            ntrees=random.randint(5, 10),
+            max_depth=random.randint(3, 7),
+            seed=gbm_seed
+        ))
+
+print("Initializing Deep Learning...")
+dl_population = [H2ODeepLearningEstimator(
+    hidden=[25, 50, 40],
+    epochs=5
+) for _ in range(population_size)]
+
+if dl_seed is not None:
+    dl_population.append(
+        H2ODeepLearningEstimator(
+            hidden=[25, 50, 40],
+            epochs=5,
+            seed=dl_seed
+        ))
+
+# Variable to generate files based on timestamp
+timestamp = int(round(time.time() * 1000))
+
+"""
+Distributed Random Forest
+"""
+print("Training DRF...")
+drf_model, drf_accuracy, drf_accuracies = train(drf_population, generations_size, train_csv)
+
+"""
+Gradient Boosting
+"""
+print("Training GBM....")
+gbm_model, gdm_accuracy, gdm_accuracies = train(gbm_population, generations_size, train_csv)
+
+"""
+Deep Learning
+"""
+print("Training DL...")
+dl_model, dl_accuracy, dl_accuracies = train(dl_population, generations_size, train_csv)
+
+"""
+Accuracy Graph
+"""
+accuracy_across_generations_graph(
+    resources_dir,
+    range(generations_size),
+    drf_accuracies,
+    gdm_accuracies,
+    dl_accuracies
+)
+
+"""
+Save Seeds
+"""
+with open(os.path.join(resources_dir, 'seeds.txt'), 'w') as file:
+    file.write(str(drf_model.params.get('seed').get('actual')) + '\n')
+    file.write(str(gbm_model.params.get('seed').get('actual')) + '\n')
+    file.write(str(dl_model.params.get('seed').get('actual')) + '\n')
+
+"""
+Kaggle
+"""
+least_models = [drf_accuracy, gdm_accuracy, dl_accuracy]
+best_accuracy = max(least_models)
+best_model = least_models[least_models.index(best_accuracy)]
+
+kaggle_file = os.path.join(resources_dir, f'kaggle_{str(timestamp)}.csv')
+dl_kaggle = test(dl_model, train_csv, test_csv)
+dl_kaggle.to_csv(kaggle_file, index=False)
