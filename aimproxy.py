@@ -176,6 +176,7 @@ print("Training Gradient Boosting....")
 print("Training Deep Learning")
 train(deep_learning, generations_size, train_csv)
 
+# TODO Kaggle load test data
 kaggle = test(best_model=None, train_data=train_csv, test_data=None)
 current_time_millis = int(round(time.time() * 1000))
 results_dir = os.path.join(current_dir, 'predictions_' + str(current_time_millis) + ".csv")
